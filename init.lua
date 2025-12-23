@@ -141,6 +141,14 @@ vim.o.timeoutlen = 300
 vim.o.splitright = true
 vim.o.splitbelow = true
 
+vim.lsp.handlers['textDocument/hover'] = vim.lsp.with(vim.lsp.handlers.hover, {
+  border = 'rounded',
+})
+
+vim.lsp.handlers['textDocument/signatureHelp'] = vim.lsp.with(vim.lsp.handlers.signature_help, {
+  border = 'rounded',
+})
+
 -- Sets how neovim will display certain whitespace characters in the editor.
 --  See `:help 'list'`
 --  and `:help 'listchars'`
@@ -149,7 +157,7 @@ vim.o.splitbelow = true
 --  It is very similar to `vim.o` but offers an interface for conveniently interacting with tables.
 --   See `:help lua-options`
 --   and `:help lua-options-guide`
-vim.o.list = true
+vim.o.list = false
 vim.opt.listchars = { tab = '» ', trail = '·', nbsp = '␣' }
 
 -- Preview substitutions live, as you type!
@@ -176,6 +184,9 @@ vim.keymap.set('n', '<Esc>', '<cmd>nohlsearch<CR>')
 -- Diagnostic keymaps
 vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagnostic [Q]uickfix list' })
 
+-- Dagnostic flow
+vim.keymap.set('n', '<leader>e', vim.diagnostic.open_float, { desc = 'Show diagnostic [E]rror' })
+
 -- Exit terminal mode in the builtin terminal with a shortcut that is a bit easier
 -- for people to discover. Otherwise, you normally need to press <C-\><C-n>, which
 -- is not what someone will guess without a bit more experience.
@@ -199,6 +210,10 @@ vim.keymap.set('n', '<C-l>', '<C-w><C-l>', { desc = 'Move focus to the right win
 vim.keymap.set('n', '<C-j>', '<C-w><C-j>', { desc = 'Move focus to the lower window' })
 vim.keymap.set('n', '<C-k>', '<C-w><C-k>', { desc = 'Move focus to the upper window' })
 
+-- Automatické organizování importů pomocí jedné zkratky
+vim.keymap.set('n', '<leader>co', '<cmd>TSToolsOrganizeImports<cr>', { desc = '[C]ode [O]rganize Imports' })
+vim.keymap.set('n', '<leader>ca', '<cmd>TSToolsAddMissingImports<cr>', { desc = '[C]ode [A]dd Imports' })
+
 -- NOTE: Some terminals have colliding keymaps or are not able to send distinct keycodes
 -- vim.keymap.set("n", "<C-S-h>", "<C-w>H", { desc = "Move window to the left" })
 -- vim.keymap.set("n", "<C-S-l>", "<C-w>L", { desc = "Move window to the right" })
@@ -218,6 +233,8 @@ vim.api.nvim_create_autocmd('TextYankPost', {
     vim.hl.on_yank()
   end,
 })
+-- Nastavení, aby nepoužitý kód vypadal jako komentář (zašedle)
+vim.api.nvim_set_hl(0, 'DiagnosticUnnecessary', { link = 'Comment' })
 
 -- [[ Install `lazy.nvim` plugin manager ]]
 --    See `:help lazy.nvim.txt` or https://github.com/folke/lazy.nvim for more info
@@ -437,6 +454,11 @@ require('lazy').setup({
       vim.keymap.set('n', '<leader>s.', builtin.oldfiles, { desc = '[S]earch Recent Files ("." for repeat)' })
       vim.keymap.set('n', '<leader><leader>', builtin.buffers, { desc = '[ ] Find existing buffers' })
 
+      -- Rychlé vytvoření splitů (vypadá to jako rozdělení okna)
+      vim.keymap.set('n', '<leader>|', '<cmd>vsplit<cr>', { desc = 'Split Window Vertically' })
+      vim.keymap.set('n', '<leader>-', '<cmd>split<cr>', { desc = 'Split Window Horizontally' })
+      vim.keymap.set('n', '<leader>wc', '<cmd>close<cr>', { desc = '[W]indow [C]lose' })
+
       -- Slightly advanced example of overriding default behavior and theme
       vim.keymap.set('n', '<leader>/', function()
         -- You can pass additional configuration to Telescope to change the theme, layout, etc.
@@ -460,6 +482,31 @@ require('lazy').setup({
         builtin.find_files { cwd = vim.fn.stdpath 'config' }
       end, { desc = '[S]earch [N]eovim files' })
     end,
+  },
+
+  { 'b0o/SchemaStore.nvim' },
+
+  {
+    'pmizio/typescript-tools.nvim',
+    dependencies = { 'nvim-lua/plenary.nvim', 'neovim/nvim-lspconfig' },
+    opts = {
+      on_attach = function(client, bufnr)
+        -- Tímto zajistíme, že budou fungovat všechny tvoje zkratky (grd, grr atd.)
+        -- které máš definované v hlavním Kickstart configu
+      end,
+      settings = {
+        -- spawn additional tsserver instance to calculate diagnostics on it
+        separate_diagnostic_server = true,
+        -- "change"|"insert_leave" determine when the client asks the server about diagnostic
+        publish_diagnostic_on = 'insert_leave',
+        -- v pnpm projektech je lepší specifikovat, že chceme vidět typy z node_modules
+        tsserver_file_preferences = {
+          includeInlayParameterNameHints = 'all',
+          includeCompletionsForModuleExports = true,
+          quotePreference = 'auto',
+        },
+      },
+    },
   },
 
   -- LSP Plugins
@@ -538,6 +585,8 @@ require('lazy').setup({
           -- Rename the variable under your cursor.
           --  Most Language Servers support renaming across files, etc.
           map('grn', vim.lsp.buf.rename, '[R]e[n]ame')
+          -- Zobrazí typ proměnné, dokumentaci a signaturu funkce pod kurzorem
+          map('K', vim.lsp.buf.hover, 'Hover Documentation')
 
           -- Execute a code action, usually your cursor needs to be on top of an error
           -- or a suggestion from your LSP for this to activate.
@@ -629,30 +678,37 @@ require('lazy').setup({
       -- Diagnostic Config
       -- See :help vim.diagnostic.Opts
       vim.diagnostic.config {
-        severity_sort = true,
-        float = { border = 'rounded', source = 'if_many' },
-        underline = { severity = vim.diagnostic.severity.ERROR },
-        signs = vim.g.have_nerd_font and {
-          text = {
-            [vim.diagnostic.severity.ERROR] = '󰅚 ',
-            [vim.diagnostic.severity.WARN] = '󰀪 ',
-            [vim.diagnostic.severity.INFO] = '󰋽 ',
-            [vim.diagnostic.severity.HINT] = '󰌶 ',
-          },
-        } or {},
-        virtual_text = {
-          source = 'if_many',
-          spacing = 2,
-          format = function(diagnostic)
-            local diagnostic_message = {
-              [vim.diagnostic.severity.ERROR] = diagnostic.message,
-              [vim.diagnostic.severity.WARN] = diagnostic.message,
-              [vim.diagnostic.severity.INFO] = diagnostic.message,
-              [vim.diagnostic.severity.HINT] = diagnostic.message,
-            }
-            return diagnostic_message[diagnostic.severity]
-          end,
+        vim.diagnostic.config {
+          severity_sort = true,
+          float = { border = 'rounded', source = 'if_many' },
+          underline = true, -- Nechá vlnovku pod chybou (decentní)
+          signs = true, -- Nechá ikonku v levém okraji
+          virtual_text = false, -- !!! Tímto vypneš ten otravný text na konci řádku
         },
+        -- severity_sort = true,
+        -- float = { border = 'rounded', source = 'if_many' },
+        -- underline = { severity = vim.diagnostic.severity.ERROR },
+        -- signs = vim.g.have_nerd_font and {
+        --   text = {
+        --     [vim.diagnostic.severity.ERROR] = '󰅚 ',
+        --     [vim.diagnostic.severity.WARN] = '󰀪 ',
+        --     [vim.diagnostic.severity.INFO] = '󰋽 ',
+        --     [vim.diagnostic.severity.HINT] = '󰌶 ',
+        --   },
+        -- } or {},
+        -- virtual_text = {
+        --   source = 'if_many',
+        --   spacing = 2,
+        --   format = function(diagnostic)
+        --     local diagnostic_message = {
+        --       [vim.diagnostic.severity.ERROR] = diagnostic.message,
+        --       [vim.diagnostic.severity.WARN] = diagnostic.message,
+        --       [vim.diagnostic.severity.INFO] = diagnostic.message,
+        --       [vim.diagnostic.severity.HINT] = diagnostic.message,
+        --     }
+        --     return diagnostic_message[diagnostic.severity]
+        --   end,
+        -- },
       }
 
       -- LSP servers and clients are able to communicate to each other what features they support.
@@ -680,9 +736,51 @@ require('lazy').setup({
         -- Some languages (like typescript) have entire language plugins that can be useful:
         --    https://github.com/pmizio/typescript-tools.nvim
         --
-        -- But for many setups, the LSP (`ts_ls`) will work just fine
-        -- ts_ls = {},
         --
+        emmet_ls = {
+          filetypes = {
+            'html',
+            'typescriptreact',
+            'javascriptreact',
+            'css',
+            'sass',
+            'scss',
+            'less',
+            'eruby',
+          },
+        },
+        dockerls = {},
+        docker_compose_language_service = {},
+
+        yamlls = {
+          settings = {
+            yaml = {
+              schemaStore = {
+                enable = false, -- Musí být false, pokud používáš SchemaStore.nvim plugin
+                url = '',
+              },
+              schemas = (function()
+                -- Zkusíme načíst plugin, pokud existuje
+                local has_schemastore, schemastore = pcall(require, 'schemastore')
+                if has_schemastore then
+                  return schemastore.yaml.schemas()
+                end
+                return {} -- Pokud plugin není, vrátíme prázdnou tabulku
+              end)(),
+            },
+          },
+        },
+        --
+        eslint = {
+          settings = {
+            -- v případě potřeby specifikuj pracovní adresáře pro monorepa
+            workingDirectories = { mode = 'auto' },
+          },
+        },
+
+        -- CSS a HTML (volitelně pro Next.js)
+        cssls = {},
+        tailwindcss = {},
 
         lua_ls = {
           -- cmd = { ... },
@@ -716,6 +814,8 @@ require('lazy').setup({
       local ensure_installed = vim.tbl_keys(servers or {})
       vim.list_extend(ensure_installed, {
         'stylua', -- Used to format Lua code
+        'prettier', -- Used to format via prettier
+        'hadolint',
       })
       require('mason-tool-installer').setup { ensure_installed = ensure_installed }
 
@@ -768,6 +868,15 @@ require('lazy').setup({
       end,
       formatters_by_ft = {
         lua = { 'stylua' },
+        javascript = { 'prettier' },
+        typescript = { 'prettier' },
+        javascriptreact = { 'prettier' },
+        typescriptreact = { 'prettier' },
+        json = { 'prettier' },
+        html = { 'prettier' },
+        css = { 'prettier' },
+        yaml = { 'prettier' },
+        dockerfile = { 'hadolint' },
         -- Conform can also run multiple formatters sequentially
         -- python = { "isort", "black" },
         --
@@ -888,6 +997,16 @@ require('lazy').setup({
     end,
   },
 
+  -- Přidej do seznamu pluginů v lazy.setup
+  {
+    'folke/trouble.nvim',
+    dependencies = { 'nvim-tree/nvim-web-devicons' },
+    opts = {},
+    keys = {
+      { '<leader>xx', '<cmd>Trouble diagnostics toggle<cr>', desc = 'Diagnostics (Trouble)' },
+    },
+  },
+
   -- Highlight todo, notes, etc in comments
   { 'folke/todo-comments.nvim', event = 'VimEnter', dependencies = { 'nvim-lua/plenary.nvim' }, opts = { signs = false } },
 
@@ -934,7 +1053,26 @@ require('lazy').setup({
     main = 'nvim-treesitter.configs', -- Sets main module to use for opts
     -- [[ Configure Treesitter ]] See `:help nvim-treesitter`
     opts = {
-      ensure_installed = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc' },
+      ensure_installed = {
+        'bash',
+        'c',
+        'diff',
+        'html',
+        'lua',
+        'luadoc',
+        'markdown',
+        'markdown_inline',
+        'query',
+        'vim',
+        'vimdoc',
+        'javascript',
+        'typescript',
+        'tsx',
+        'css',
+        'json',
+        'yaml',
+        'dockerfile',
+      },
       -- Autoinstall languages that are not installed
       auto_install = true,
       highlight = {

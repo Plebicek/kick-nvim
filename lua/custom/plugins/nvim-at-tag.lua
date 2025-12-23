@@ -1,0 +1,17 @@
+return {
+  'windwp/nvim-ts-autotag',
+  opts = {
+    -- Options for the plugin
+    opts = {
+      enable_close = true, -- Auto close tags
+      enable_rename = true, -- Auto rename pairs of tags
+      enable_close_on_slash = false, -- Auto close on trailing </
+    },
+    -- Also support these filetypes
+    per_filetype = {
+      ['html'] = {
+        enable_close = true,
+      },
+    },
+  },
+}
