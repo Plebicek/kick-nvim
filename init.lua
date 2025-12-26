@@ -737,6 +737,7 @@ require('lazy').setup({
         --    https://github.com/pmizio/typescript-tools.nvim
         --
         --
+        html = { filetypes = { 'html', 'twig', 'hbs' } },
         emmet_ls = {
           filetypes = {
             'html',
